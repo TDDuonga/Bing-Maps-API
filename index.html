@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Tim duong ngan nhat</title>
+
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css">
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="description" content="" />
+    <meta name="keywords" content="Microsoft maps, map, gis, API, SDK, Bing, Bing Maps" />
+    <meta name="author" content="Microsoft Bing Maps" />
+    <meta name="screenshot" content="bmv8-directionsinputpanelexample.jpg" />
+
+    <script>
+        var SERVER_URL = "http://localhost:5000";
+        var REST_API = SERVER_URL + "/calculate?pntdata=";
+        var map;
+        var count = 0;
+        var source = "";
+        var dest = "";
+        var directionsManager;
+        var xhr = new XMLHttpRequest();
+
+
+        function GetMap() {
+            map = new Microsoft.Maps.Map('#map', {});
+            // Đặt trung tâm và độ phóng to bản đồ.
+            map.setView({
+                center: new Microsoft.Maps.Location(10.825859244927047, 106.62970490571146),
+                zoom: 14,
+            });
+            //Load the directions module.
+            Microsoft.Maps.loadModule('Microsoft.Maps.Directions', function () {
+                //Create an instance of the directions manager.
+                directionsManager = new Microsoft.Maps.Directions.DirectionsManager(map);
+
+                //Specify where to display the route instructions.
+                directionsManager.setRenderOptions({ itineraryContainer: '#directionsItinerary' });
+
+
+                //Specify the where to display the input panel
+                directionsManager.showInputPanel('directionsPanel');
+
+
+
+            });
+
+
+            function getAddressFromCoordinates(latitude, longitude) {
+                var apiKey = 'AoSUH7WVIEiPvnqf8TwSppDbPkbYj0S3eeBUtk-NHFZy7iUFy8Vm_X80ZH7M8dH_'; // Thay thế bằng API key của bạn từ Bing Maps
+                return fetch(`https://dev.virtualearth.net/REST/v1/Locations/${latitude},${longitude}?includeEntityTypes=Address&key=${apiKey}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        
+                        const address = data.resourceSets[0].resources[0].address;
+                        return `${address.formattedAddress}`;
+                        
+                    })
+                    .catch(error => {
+                        throw new Error('Lỗi khi lấy địa chỉ');
+                    });
+            }
+        
+            document.getElementById('submitinput').addEventListener('click', function (event) {
+                event.preventDefault(); // Ngăn chặn hành động mặc định của nút submit
+                var sourceAddress = document.getElementById('source').value;
+                var destAddress = document.getElementById('dest').value;
+                // Chuyển đổi địa chỉ thành tọa độ trước khi gửi yêu cầu
+                geocodeAddress(sourceAddress, destAddress);
+            });
+            function geocodeAddress(sourceAddress, destAddress) {
+                var geocoder = new Microsoft.Maps.Search.SearchManager(map);
+                geocoder.geocode({
+                    where: sourceAddress,
+                    callback: function (sourceResult) {
+                        if (sourceResult && sourceResult.results && sourceResult.results.length > 0) {
+                            var sourceLocation = sourceResult.results[0].location;
+                            // Chuyển địa chỉ đích thành tọa độ sau khi nhận được tọa độ nguồn
+                            geocoder.geocode({
+                                where: destAddress,
+                                callback: function (destResult) {
+                                    if (destResult && destResult.results && destResult.results.length > 0) {
+                                        var destLocation = destResult.results[0].location;
+                                        // Sau khi có được tọa độ nguồn và đích, tiếp tục xử lý
+                                        var source = `${sourceLocation.latitude},${sourceLocation.longitude}`;
+                                        var dest = `${destLocation.latitude},${destLocation.longitude}`;
+                                        var REST_CALL = REST_API + source + "," + dest;
+                                        document.getElementById('REST_CALL').value = REST_CALL;
+                                        var xhttp = new XMLHttpRequest();
+                                        xhttp.open("GET", REST_CALL, true);
+                                        xhttp.onload = function (e) {
+                                            if (xhttp.readyState === 4) {
+                                                if (xhttp.status === 200) {
+                                                    var lineCoordinates = JSON.parse(xhttp.responseText);
+                                                    var finalPath = lineCoordinates.finalPath;
+                                                    var cost = lineCoordinates.cost;
+                                                    // Tạo một mảng để lưu trữ vị trí cho đường đa tuyến
+                                                    var locations = [];
+                                                    // Nối tọa độ đích trực tiếp vào mảng
+                                                    locations.push(new Microsoft.Maps.Location(dest.split(',')[0], dest.split(',')[1]));
+                                                    //Lặp lại tọa độ và thêm vào mảng vị trí
+                                                    finalPath.forEach(function (coordinate) {
+                                                        var location = new Microsoft.Maps.Location(coordinate.lat, coordinate.lng);
+                                                        locations.push(location);
+                                                    });
+                                                    locations.push(new Microsoft.Maps.Location(source.split(',')[0], source.split(',')[1]));
+                                                    // Hiển thị đinh ghim cho nguồn và đích trên bản đồ
+                                                    var sourceLocation = new Microsoft.Maps.Location(source.split(',')[0], source.split(',')[1]);
+                                                    var destLocation = new Microsoft.Maps.Location(dest.split(',')[0], dest.split(',')[1]);
+                                                    var sourcePin = new Microsoft.Maps.Pushpin(sourceLocation, { color: 'green',title: `Source: ${sourceLocation.latitude.toFixed(6)}, ${sourceLocation.longitude.toFixed(6)}` });
+                                                    var destPin = new Microsoft.Maps.Pushpin(destLocation, { color: 'red',title: `Destination: ${destLocation.latitude.toFixed(6)}, ${destLocation.longitude.toFixed(6)}` });
+                                                    map.entities.push(sourcePin);
+                                                    map.entities.push(destPin);
+
+                                                    // Hiển thị thông tin tọa độ trên đinh ghim
+                                                    var sourcePin = new Microsoft.Maps.Pushpin(sourceLocation, { color: 'green' });
+                                                    var destPin = new Microsoft.Maps.Pushpin(destLocation, { color: 'red' });
+                                                    map.entities.push(sourcePin);
+                                                    map.entities.push(destPin);
+
+                                                    // Tạo một đa tuyến bằng cách sử dụng mảng vị trí
+                                                    var polyline = new Microsoft.Maps.Polyline(locations, {
+                                                        strokeColor: 'blue', // Set your preferred stroke color
+                                                        strokeThickness: 5       // Set your preferred stroke thickness
+                                                    });
+                                                    // Tự động chuyển tới và thu phóng để xem đường đi mới
+                                                    var bounds = Microsoft.Maps.LocationRect.fromLocations(locations);
+                                                    map.setView({ bounds: bounds });
+
+                                                    map.entities.push(polyline);
+                                                    var costelement = document.getElementById('costInfo');
+                                                    costelement.innerText = `Chi phí từ ${source} đến ${dest}: ${cost}(km)`;
+
+                                                } else {
+                                                    console.error("Server error: ", xhttp.statusText);
+                                                }
+                                            }
+                                        };
+                                        xhttp.send();
+                                    } else {
+                                        console.error("Geocode was not successful for destAddress.");
+                                    }
+                                }
+                            });
+                        } else {
+                            console.error("Geocode was not successful for sourceAddress.");
+                        }
+                    },
+                    errorCallback: function (e) {
+                        console.error("Error: ", e);
+                    }
+                });
+            }
+
+            Microsoft.Maps.Events.addHandler(map, 'click', function (e) {
+                var pinLocation = e.location;
+                if (count === 2) {
+                    // Lấy tham chiếu đến phần tử button "Vẽ"
+                    var drawButton = document.getElementById('submit');
+                    // Thêm sự kiện nghe cho nút "Vẽ"
+                    drawButton.addEventListener('click', function (event) {
+                        event.preventDefault(); // Ngăn chặn hành động mặc định của nút submit (nếu có)
+                        var REST_CALL = REST_API + source + "," + dest;
+                        document.getElementById('REST_CALL').value = REST_CALL;
+                        var xhttp = new XMLHttpRequest();
+                        xhttp.open("GET", REST_CALL, true);
+                        xhttp.onload = function (e) {
+                            if (xhttp.readyState === 4) {
+                                if (xhttp.status === 200) {
+                                    var lineCoordinates = JSON.parse(xhttp.responseText);
+                                    var finalPath = lineCoordinates.finalPath;
+                                    var cost = lineCoordinates.cost;
+                                    // Tạo một mảng để lưu trữ vị trí cho đường đa tuyến
+                                    var locations = [];
+                                    // Nối tọa độ đích trực tiếp vào mảng
+                                    locations.push(new Microsoft.Maps.Location(dest.split(',')[0], dest.split(',')[1]));
+                                    //Lặp lại tọa độ và thêm vào mảng vị trí
+                                    finalPath.forEach(function (coordinate) {
+                                        var location = new Microsoft.Maps.Location(coordinate.lat, coordinate.lng);
+                                        locations.push(location);
+                                    });
+                                    locations.push(new Microsoft.Maps.Location(source.split(',')[0], source.split(',')[1]));
+                                    // Tạo một đa tuyến bằng cách sử dụng mảng vị trí
+                                    var polyline = new Microsoft.Maps.Polyline(locations, {
+                                        strokeColor: 'blue', // Set your preferred stroke color
+                                        strokeThickness: 5       // Set your preferred stroke thickness
+                                    });
+                                    map.entities.push(polyline);
+                                    console.log('xhttp.responseText', xhttp.responseText);
+                                    var costelement = document.getElementById('costInfo');
+                                    costelement.innerText = `Chi phí từ source đến dest: ${cost}`;
+
+                                } else {
+                                    console.error("Server error: ", xhttp.statusText);
+                                }
+                            }
+                        };
+
+                        xhttp.onerror = function (e) {
+                            console.error("Error connecting to: ", SERVER_URL);
+                        };
+                        xhttp.send();
+                    });
+                    // Lấy tham chiếu đến phần tử button "Vẽ"
+                    var drawButton = document.getElementById('submittest');
+                    // Thêm sự kiện nghe cho nút "Vẽ"
+                    drawButton.addEventListener('click', function (event) {
+                        event.preventDefault(); // Ngăn chặn hành động mặc định của nút submit (nếu có)
+                        var REST_CALL = REST_API + source + "," + dest;
+                        document.getElementById('REST_CALL').value = REST_CALL;
+
+                        var xhttp = new XMLHttpRequest();
+                        xhttp.open("GET", REST_CALL, true);
+                        xhttp.onload = function (e) {
+                            if (xhttp.readyState === 4) {
+                                if (xhttp.status === 200) {
+                                    var lineCoordinates = JSON.parse(xhttp.responseText);
+                                    var finalPath = lineCoordinates.finalPath;
+                                    var cost = lineCoordinates.cost;
+                                    finalPath.forEach(function (coordinate) {
+                                        var location = new Microsoft.Maps.Location(coordinate.lat, coordinate.lng);
+                                        var pin = new Microsoft.Maps.Pushpin(location);
+                                        map.entities.push(pin);
+                                    });
+                                    console.log('xhttp.responseText', xhttp.responseText);
+
+                                }
+                                else {
+                                    console.error("Server error: ", xhttp.statusText);
+                                }
+                            }
+                        };
+                        xhttp.onerror = function (e) {
+                            console.error("Error connecting to: ", SERVER_URL);
+                        };
+                        xhttp.send();
+                    });
+                } else {
+                    count = count + 1;
+                    if (count === 1) {
+                        source = pinLocation.latitude + "," + pinLocation.longitude;
+                        getAddressFromCoordinates(pinLocation.latitude, pinLocation.longitude)
+                            .then(address => {
+                                console.log('address source', address)
+
+                                document.getElementById('source').value = address;
+                            })
+                            .catch(error => {
+                                console.error('Đã xảy ra lỗi khi lấy địa chỉ nguồn:', error);
+                            });
+
+                        var pin = new Microsoft.Maps.Pushpin(e.location, {
+                            color: 'green',
+                            title: 'Source',
+                            subTitle: 'Lat: ' + pinLocation.latitude + ', Long: ' + pinLocation.longitude
+                        });
+                        map.entities.push(pin);
+                    } else {
+                        dest = pinLocation.latitude + "," + pinLocation.longitude;
+                        getAddressFromCoordinates(pinLocation.latitude, pinLocation.longitude)
+                            .then(address => {
+                                document.getElementById('dest').value = address;
+                            })
+                            .catch(error => {
+                                console.error('Đã xảy ra lỗi khi lấy địa chỉ đích:', error);
+                            });
+
+                        var pin = new Microsoft.Maps.Pushpin(e.location, {
+                            color: 'red',
+                            title: 'Destination',
+                            subTitle: 'Lat: ' + pinLocation.latitude + ', Long: ' + pinLocation.longitude
+                        });
+                        map.entities.push(pin);
+                    }
+                }
+            });
+        }
+
+
+    </script>
+
+</head>
+
+<body>
+
+    <div id="right-panel">
+
+
+        <div class="search-panel">
+            <div id="panelofinput" class="panelofinput" style="display: none">
+                <input type="file" id="files" name="file" /> File read:
+                <textarea id="output"></textarea>
+            </div>
+            <div class="paneloftext">
+                <b>Bắt đầu:</b>
+                <input id="source" type="text">
+                <br>
+                <div id="add-new-way">
+                    <b>Điểm đích:</b>
+                    <input id="dest" type="text">
+
+                    <!-- <input type="submit" id="submit-2" value="+">
+                <div id="add-new"></div> -->
+                </div>
+                <br>
+                <b>End</b>
+                <input id="REST_CALL" type="text">
+                <br>
+                <br>
+               
+                <div class="button-01">
+                    <input type="submit" id="submitinput" value="Tìm đường(Nhập)">
+                </div>
+                <div class="button-01">
+                    <input type="submit" id="submit" value="Tìm đường(Click)">
+                </div>
+
+                <div class="button-01">
+                    <input type="submit" id="submittest" value="hiển thị tọa độ">
+                </div>
+            </div>
+            <!-- <div class="button-01"  role="alert"  style="display: none">
+          <input type="submit" id="submitinput" value="Tính và Vẽ" >
+        </div> -->
+        </div>
+        <!-- <div id="directions-panel"></div>
+    <div id="findthebestway" style="display: none"></div> -->
+        <div id="costInfo" class="thebestway"></div>
+        <div id="thebestwaygo" style="display: none"></div>
+    </div>
+    <div id="map"></div>
+
+    <script>
+        // Dynamic load the Bing Maps Key and Script
+        // Get your own Bing Maps key at https://www.microsoft.com/maps
+
+    </script>
+    <script type='text/javascript'
+        src='http://www.bing.com/api/maps/mapcontrol?callback=GetMap&key=AoSUH7WVIEiPvnqf8TwSppDbPkbYj0S3eeBUtk-NHFZy7iUFy8Vm_X80ZH7M8dH_'
+        async defer></script>
+</body>
+
+</html>
